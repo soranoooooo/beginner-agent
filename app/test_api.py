@@ -29,4 +29,4 @@ completion = client.chat.completions.create(
         {"role": "user", "content": "请用一句话解释什么是 agent"},
     ]
 )
-print(completion.model_dump_json())
+print(completion.choices[0].message.content)
