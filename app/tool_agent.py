@@ -1,6 +1,8 @@
 from openai import OpenAI
 from dotenv import load_dotenv
-from tools.calculator import add_numbers
+
+from tools.calculator import add_numbers, multiply_numbers
+from tools.date_tool import get_today_date
 
 load_dotenv()
 
@@ -13,19 +15,23 @@ conversation = [
         "role": "system",
         "content": (
             "你是一个会使用工具的 AI 助手。\n"
-            "当用户要求你做加法计算时，不要直接给答案。\n"
-            "你必须严格按以下格式输出：\n"
+            "你有以下工具：\n"
+            "1. add_numbers(a, b)：加法\n"
+            "2. multiply_numbers(a, b)：乘法\n"
+            "3. get_today_date()：获取今天日期\n\n"
+            "规则：\n"
+            "如果需要用工具，必须严格按以下格式输出：\n"
+            "TOOL: 工具名\n"
+            "ARGS: 参数\n\n"
+            "示例：\n"
             "TOOL: add_numbers\n"
-            "ARGS: 数字1, 数字2\n"
-            "例如：\n"
-            "TOOL: add_numbers\n"
-            "ARGS: 12, 30\n"
-            "如果用户不是在请求加法计算，就正常直接回答。"
+            "ARGS: 12, 30\n\n"
+            "如果不需要工具，直接正常回答。"
         )
     }
 ]
 
-print("Tool Agent 已启动（输入 quit 退出）")
+print("Multi-Tool Agent 已启动（输入 quit 退出）")
 
 while True:
     user_input = input("\n你：").strip()
@@ -44,74 +50,70 @@ while True:
         messages=conversation
     )
 
-    assistant_reply = response.choices[0].message.content
+    reply = response.choices[0].message.content
+
     print("\n模型原始输出：")
-    print(assistant_reply)
+    print(reply)
 
-    # 判断是否要调用工具
-    if assistant_reply.startswith("TOOL: add_numbers"):
+    # 判断是否调用工具
+    if reply.startswith("TOOL:"):
         try:
-            lines = assistant_reply.strip().splitlines()
-            args_line = None
+            lines = reply.strip().splitlines()
 
-            for line in lines:
-                if line.startswith("ARGS:"):
-                    args_line = line
-                    break
+            tool_name = lines[0].replace("TOOL:", "").strip()
+            args_line = next((l for l in lines if l.startswith("ARGS:")), None)
 
-            if args_line is None:
-                raise ValueError("没有找到 ARGS 行")
+            args = []
+            if args_line:
+                args_text = args_line.replace("ARGS:", "").strip()
+                args = [x.strip() for x in args_text.split(",") if x.strip()]
 
-            args_text = args_line.replace("ARGS:", "").strip()
-            a_str, b_str = args_text.split(",")
+            # 调用工具
+            if tool_name == "add_numbers":
+                result = add_numbers(float(args[0]), float(args[1]))
 
-            a = float(a_str.strip())
-            b = float(b_str.strip())
+            elif tool_name == "multiply_numbers":
+                result = multiply_numbers(float(args[0]), float(args[1]))
 
-            tool_result = add_numbers(a, b)
+            elif tool_name == "get_today_date":
+                result = get_today_date()
 
-            tool_message = f"工具 add_numbers 的计算结果是：{tool_result}"
+            else:
+                raise ValueError(f"未知工具: {tool_name}")
+
+            tool_msg = f"工具 {tool_name} 的结果是：{result}"
 
             conversation.append({
                 "role": "assistant",
-                "content": assistant_reply
+                "content": reply
             })
 
             conversation.append({
                 "role": "user",
-                "content": (
-                    f"{tool_message}。"
-                    "请你基于这个工具结果，给用户一个自然语言回答。"
-                )
+                "content": tool_msg + "，请给出自然语言回答"
             })
 
-            final_response = client.chat.completions.create(
+            final = client.chat.completions.create(
                 model="qwen-plus",
                 messages=conversation
             )
 
-            final_answer = final_response.choices[0].message.content
+            answer = final.choices[0].message.content
 
-            print("\nAgent：", final_answer)
+            print("\nAgent：", answer)
 
             conversation.append({
                 "role": "assistant",
-                "content": final_answer
+                "content": answer
             })
 
         except Exception as e:
-            error_msg = f"工具调用失败：{e}"
-            print("\nAgent：", error_msg)
-
-            conversation.append({
-                "role": "assistant",
-                "content": error_msg
-            })
+            print("\nAgent：工具调用失败 ->", e)
 
     else:
-        print("\nAgent：", assistant_reply)
+        print("\nAgent：", reply)
 
         conversation.append({
             "role": "assistant",
-            "content": assistant_reply
+            "content": reply
         })
